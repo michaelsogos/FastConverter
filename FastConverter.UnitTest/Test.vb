@@ -136,7 +136,7 @@
 
     <TestMethod()>
     Public Sub TestSingle()
-        Dim NumbersToTest() As Single = {-5.828125F, 5.828125F, Single.MaxValue, Single.MinValue}
+        Dim NumbersToTest() As Single = {Math.PI, Single.Epsilon, (-1 * Single.Epsilon), -5.828125F, 5.828125F, Single.MaxValue, Single.MinValue}
         For Each n In NumbersToTest
             Dim bits = FastConverter.GetBytes(n)
             Assert.AreEqual(bits.Length, 4, String.Format("The BITS (bytearray) length is {0} while expected 4 for number {1}!", bits.Length, n))
@@ -147,7 +147,7 @@
 
     <TestMethod()>
     Public Sub TestDouble()
-        Dim NumbersToTest() As Double = {-5.828125, 5.828125, Double.MaxValue, Double.MinValue}
+        Dim NumbersToTest() As Double = {Double.Epsilon, -5.828125, 5.828125, Double.MaxValue, Double.MinValue}
         For Each n In NumbersToTest
             Dim bits = FastConverter.GetBytes(n)
             Assert.AreEqual(bits.Length, 8, String.Format("The BITS (bytearray) length is {0} while expected 8 for number {1}!", bits.Length, n))

@@ -74,6 +74,11 @@ Public Class FastConverter
         Return Bytes
     End Function
 
+    ''' <summary>
+    ''' Following IEEE754 specification, float-single precision will be converter in integer representation and then converted in byte array
+    ''' </summary>
+    ''' <param name="value"></param>
+    ''' <returns></returns>
     Public Shared Function GetBytes(value As Single) As Byte()
         Dim singleToInteger As Integer = 0
 
@@ -85,19 +90,24 @@ Public Class FastConverter
         'In case it is ZERO
         If (numberAbsolute = 0.0) Then singleToInteger = (numberSign << 31) Or (0 << 23) Or 0
 
-        Dim exponent As Long = Math.Min(Math.Floor(Math.Log(numberAbsolute) / Math.Log(2)), 127)
-        'Dim exponent As Integer = Fix(Math.Log(numberAbsolute) / Math.Log(2))
-        'In case it is infinity
-        If (exponent > 127 OrElse exponent < -126) Then
-            singleToInteger = (numberSign << 31) Or (&HFF << 23) Or 0
+        Dim exponent As Integer = Math.Min(Math.Floor(Math.Log(numberAbsolute) / Math.Log(2)), 127)
+
+        If (exponent <= -149) Then 'subnormal - underflow
+            numberSign = If(value < 0, 0, 1)
+            singleToInteger = (numberSign * 2147483648) + ((exponent + 127) << 23) '2^31 = 2147483648
         Else
             Dim mantissa As Single = numberAbsolute / 2 ^ exponent
-            singleToInteger = (numberSign << 31) Or ((exponent + 127) << 23) Or ((mantissa * Math.Pow(2, 23)) And &H7FFFFF) '&H7FFFFF =(2^23) - 1 = 8388607
+            singleToInteger = (numberSign << 31) Or ((exponent + 127) << 23) Or ((mantissa * 8388608) And 8388607) '2^23 = 8388608 = &H‭800000‬ ||| &H7FFFFF = (2^23) - 1 = 8388607
         End If
 
         Return GetBytes(singleToInteger)
     End Function
 
+    ''' <summary>
+    ''' Following IEEE754 specification, float-double precision will be converter in long representation and then converted in byte array
+    ''' </summary>
+    ''' <param name="value"></param>
+    ''' <returns></returns>
     Public Shared Function GetBytes(value As Double) As Byte()
         Dim doubleToLong As Long = 0
 
@@ -110,12 +120,13 @@ Public Class FastConverter
         If (numberAbsolute = 0.0) Then doubleToLong = (numberSign << 63) Or (0 << 52) Or 0
 
         Dim exponent As Long = Math.Min(Math.Floor(Math.Log(numberAbsolute) / Math.Log(2)), 1023)
+
         'In case it is infinity
         If (exponent > 1023 OrElse exponent < -1022) Then
             doubleToLong = (numberSign << 63) Or (&H7FF << 52) Or 0
         Else
             Dim mantissa As Double = numberAbsolute / 2 ^ exponent
-            doubleToLong = (numberSign << 63) Or ((exponent + 1023) << 52) Or ((mantissa * Math.Pow(2, 52)) And &HFFFFFFFFFFFFF) '&H‭FFFFFFFFFFFFF‬ = (2^52) - 1 = 4503599627370495
+            doubleToLong = (numberSign << 63) Or ((exponent + 1023) << 52) Or ((mantissa * 4503599627370496) And 4503599627370495) '2^52 = 4503599627370496 = &H‭10000000000000‬ ||| &H‭FFFFFFFFFFFFF‬ = (2^52) - 1 = 4503599627370495
         End If
 
         Return GetBytes(doubleToLong)
@@ -180,33 +191,48 @@ Public Class FastConverter
         Return Result
     End Function
 
+    ''' <summary>
+    ''' Following IEEE754 specification, from byte array will be converted back to integer representation and then into float-single precision number
+    ''' </summary>
+    ''' <param name="bytes"></param>
+    ''' <returns></returns>   
     Public Shared Function GetSingle(bytes As Byte()) As Single
         Dim bytesToInteger = GetInteger(bytes)
 
         Dim numberSign = If(bytesToInteger >> 31 < 0, -1, 1)
-        Dim exponent = ((bytesToInteger >> 23) And &HFF) - 127
-        Dim significand = (bytesToInteger And Not (-1 * 2 ^ 23))
+        Dim exponent = (bytesToInteger >> 23) - 127
+        Dim significand = (bytesToInteger And Not -8388608) '(-1 * 2^23) = -8388608 = &H‭FFFFFFFFFF800000‬
         Dim mantissa As Single = 0.0F
 
-        'In case number is Infinity or NaN
-        If (exponent = 128) Then Return numberSign * (If(significand, Single.NaN, Single.PositiveInfinity))
-        If (exponent = -127) Then
-            If (significand = 0) Then Return numberSign * 0.0F
-            exponent = -126
-            mantissa = significand / (2 ^ 22)
-        Else
-            mantissa = (significand Or (2 ^ 23)) / (2 ^ 23)
-        End If
+        'normal number
+        If (exponent <> -149) Then exponent = exponent And 255
+        'positive subnormal - underflow
+        If (exponent = 107 AndAlso significand = 0) Then exponent = -149
+
+        ''In case number is Infinity or NaN
+        'If (exponent = 128) Then Return numberSign * (If(significand, Single.NaN, Single.PositiveInfinity))
+        'If (exponent = -127) Then
+        '    If (significand = 0) Then Return numberSign * 0.0F
+        '    exponent = -126
+        '    mantissa = significand / (2 ^ 22)
+        'Else
+        mantissa = (significand Or 8388608) / 8388608 ' 2^23 = 8388608 = &H800000
+        'End If
 
         Return numberSign * mantissa * 2 ^ exponent
     End Function
 
+    ''' <summary>
+    ''' Following IEEE754 specification, from byte array will be converted back to long representation and then into float-double precision number
+    ''' </summary>
+    ''' <param name="bytes"></param>
+    ''' <returns></returns>  
     Public Shared Function GetDouble(bytes As Byte()) As Double
         Dim bytesToLong = GetLong(bytes)
 
         Dim numberSign = If(bytesToLong >> 63 < 0, -1, 1)
-        Dim exponent = ((bytesToLong >> 52) And &H7FF) - 1023
-        Dim significand = (bytesToLong And Not (-1 * 2 ^ 52))
+        Dim exponent = ((bytesToLong >> 52) And 2047) - 1023
+        Dim significand = (bytesToLong And Not -4503599627370496) '(-1 * 2^52) = -4503599627370496 = &H‭FFF0000000000000‬
         Dim mantissa As Double = 0.0
 
         'In case number is Infinity or NaN
@@ -216,7 +242,7 @@ Public Class FastConverter
             exponent = -1022
             mantissa = significand / (2 ^ 51)
         Else
-            mantissa = (significand Or (2 ^ 52)) / (2 ^ 52)
+            mantissa = (significand Or 4503599627370496) / 4503599627370496 '2^52 = 4503599627370496 = &H‭10000000000000
         End If
 
         Return numberSign * mantissa * 2 ^ exponent
